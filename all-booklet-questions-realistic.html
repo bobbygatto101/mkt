@@ -42,14 +42,21 @@ const app=document.getElementById('app');
 let S=null; const opt={shuffle:true,limit:0};
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const SK='seen:'+location.pathname;
+let SEEN=new Set(); try{SEEN=new Set(JSON.parse(localStorage.getItem(SK)||'[]'))}catch(e){}
+const qid=q=>{let h=0;const s=q.q+'|'+q.a.join('|')+'|'+(q.img||'');for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return h.toString(36)};
+const saveSeen=()=>{try{localStorage.setItem(SK,JSON.stringify([...SEEN]))}catch(e){}};
+const markSeen=q=>{const k=qid(q);if(!SEEN.has(k)){SEEN.add(k);saveSeen();}};
+const unseenN=qs=>qs.filter(q=>!SEEN.has(qid(q))).length;
 function home(){
   const total=DATA.reduce((n,d)=>n+d.qs.length,0);
   app.innerHTML=`<h1>כל השאלות מהחוברת – גרסה מאתגרת</h1><p class="mut">כל שאלות האתר וכל השאלות החדשות מחוברת ההכנה לקצונה, לפי שערי החוברת. לחצו על תשובה ותראו מיד אם צדקתם, באיזה עמוד בחוברת זה מופיע, והאם השאלה מהאתר או חדשה.</p>
   <div class="opts"><label><input type="checkbox" id="sh" ${opt.shuffle?'checked':''}> ערבב שאלות</label>
-  <label>מספר שאלות: <select id="lim"><option value="0">הכל</option><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label></div>
-  <div class="grid">${DATA.map((d,i)=>`<button class="pick" data-i="${i}"><b>${d.name}</b><span>${d.qs.length} שאלות</span></button>`).join('')}
+  <label>מספר שאלות: <select id="lim"><option value="0">הכל</option><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><button class="btn sec" id="rs" type="button">איפוס היסטוריה</button></div>
+  <div class="grid">${DATA.map((d,i)=>`<button class="pick" data-i="${i}"><b>${d.name}</b><span>${d.qs.length} שאלות · ${unseenN(d.qs)} עוד לא הופיעו</span></button>`).join('')}
   <button class="pick" data-i="all"><b>כל השערים</b><span>${total} שאלות</span></button></div>`;
-  app.querySelector('#lim').value=opt.limit;
+  app.querySelector('#lim').value=opt.limit;app.querySelector('#rs').onclick=()=>{if(confirm('לאפס את היסטוריית השאלות שכבר הופיעו?')){SEEN=new Set();saveSeen();home();}};
   app.querySelector('#sh').onchange=e=>opt.shuffle=e.target.checked;
   app.querySelector('#lim').onchange=e=>opt.limit=+e.target.value;
   app.querySelectorAll('.pick').forEach(b=>b.onclick=()=>{
@@ -58,13 +65,14 @@ function home(){
   });
 }
 function start(name,qs){
-  let list=opt.shuffle?shuf(qs):qs.slice(); if(opt.limit) list=list.slice(0,opt.limit);
+  let list;if(opt.shuffle){const un=qs.filter(q=>!SEEN.has(qid(q))),sn=qs.filter(q=>SEEN.has(qid(q)));if(!un.length){qs.forEach(q=>SEEN.delete(qid(q)));saveSeen();list=shuf(qs);}else list=shuf(un).concat(shuf(sn));}else list=qs.slice(); if(opt.limit) list=list.slice(0,opt.limit);
   S={name,list,idx:0,right:0,wrong:[]}; show();
 }
+const scTxt=a=>a?`נכונות: ${S.right}/${a} (${Math.round(S.right/a*100)}%)`:`נכונות: 0/0`;
 function show(){
-  const q=S.list[S.idx], multi=q.c.length>1;
+  const q=S.list[S.idx], multi=q.c.length>1; markSeen(q);
   const order=shuf(q.a.map((_,i)=>i)); // shuffle answer order like the real site
-  app.innerHTML=`<div class="top"><span><b>${S.name}</b></span><span>שאלה ${S.idx+1} מתוך ${S.list.length} · נכונות: ${S.right}</span></div>
+  app.innerHTML=`<div class="top"><span><b>${S.name}</b></span><span>שאלה ${S.idx+1} מתוך ${S.list.length} · <b id="sc">${scTxt(S.idx)}</b></span></div>
   <div class="prog"><i style="width:${S.idx/S.list.length*100}%"></i></div>
   <div class="card"><p class="q">${esc(q.q)}</p>${multi?'<p class="hint">יש כמה תשובות נכונות. סמן את כולן ולחץ "בדוק".</p>':''}
   ${q.img?`<img src="${q.img}" alt="מפה">`:''}
@@ -80,7 +88,7 @@ function show(){
     const fb=app.querySelector('#fb');
     if(ok){S.right++;fb.className='fb ok';fb.textContent='✓ נכון!'+(q.p?' (עמ\' '+q.p+' בחוברת)':'')+(q.o==='site'?' · מהאתר':q.o==='dup'?' · חדש, דומה לשאלה באתר':q.o==='new'?' · חדש':'');}
     else{S.wrong.push(q);fb.className='fb bad';fb.textContent='✗ לא נכון. התשובה הנכונה מסומנת בירוק.'+(q.p?' (עמ\' '+q.p+' בחוברת)':'')+(q.o==='site'?' · מהאתר':q.o==='dup'?' · חדש, דומה לשאלה באתר':q.o==='new'?' · חדש':'');}
-    const c=app.querySelector('#chk'); if(c)c.remove();
+    app.querySelector('#sc').textContent=scTxt(S.idx+1); const c=app.querySelector('#chk'); if(c)c.remove();
     const nx=app.querySelector('#nx'); nx.style.display=''; nx.focus();
   };
   btns.forEach(b=>b.onclick=()=>{const i=+b.dataset.i;
